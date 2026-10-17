@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Literal
 from langchain_groq import ChatGroq
 from langchain_tavily import TavilySearch
@@ -50,14 +51,21 @@ def add_trace(state: AgentState, message: str):
 
 def route_question(state: AgentState):
     router = llm().with_structured_output(RouteDecision, method="json_mode")
-    decision = router.invoke(f"""
+    try:
+        decision = router.invoke(f"""
 You route messages for an enterprise IT support assistant.
-Use KB for questions about company IT policies, VPN, Password reset, MFA, laptop setup,
-software access, security, email, devices, troubleshooting, or technology knowledge.
+Choose exactly one route:
+- "kb": questions about company IT policies, VPN, Password reset, MFA, laptop setup,
+  software access, security, email, devices, troubleshooting, or technology knowledge.
+- "direct": greetings or simple chit-chat that needs no documents.
 Question: {state['question']}
-Return valid JSON like {{"route":"kb"}}.
+Return JSON with route set to exactly "kb" or "direct", e.g. {{"route":"kb"}}.
     """)
-    return {"Source_used": decision.route, "trace": add_trace(state, f"Router -> {decision.route.upper()}")}
+        route = decision.route
+    except Exception:
+        logger.warning("Router output could not be parsed; defaulting to kb", exc_info=True)
+        route = "kb"
+    return {"source_used": route, "trace": add_trace(state, f"Router -> {route.upper()}")}
 
 
 
@@ -89,7 +97,16 @@ def after_kb(state: AgentState) -> Literal["generate_from_kb", "search_web"]:
 
 
 def search_web(state: AgentState):
-    result = web_search_tool().invoke({"query": state["current_query"]})
+    try:
+        result = web_search_tool().invoke({"query": state["current_query"]})
+    except Exception as exc:
+        logger.warning("Web search failed: %s", exc)
+        return {
+            "web_results": "",
+            "citations": [],
+            "source_used": "web",
+            "trace": add_trace(state, "Web fallback → Tavily search failed"),
+        }
     lines, citations = [], []
     if isinstance(result, dict):
         if result.get("answer"):
@@ -155,7 +172,7 @@ Question: {state['question']}\n\nPrivate KB:\n{context}
         src = d.metadata.get("source", "Private KB")
         if src not in seen:
             seen.add(src)
-            citations.append({"title": src.split("/")[-1], "url": "", "type": "private_kb"})
+            citations.append({"title": re.split(r"[\\/]", src)[-1], "url": "", "type": "private_kb"})
     return {"answer": answer, "source_used": "private_kb", "citations": citations, "trace": add_trace(state, "Answer generation → PRIVATE KB")}
 
 

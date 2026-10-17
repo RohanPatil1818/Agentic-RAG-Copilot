@@ -1,4 +1,5 @@
 
+import hashlib
 import time
 from pinecone import Pinecone, ServerlessSpec
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -39,8 +40,6 @@ def get_embedding_dimension(model_name: str | None = None) -> int:
 def get_embeddings():
     global _embeddings
     if _embeddings is None:
-        if not settings.hf_api_key:
-            raise RuntimeError("HF_API_KEY is missing")
         _embeddings = HuggingFaceEmbeddings(
             model = settings.embeddings_model,
        #     api_key = settings.hf_api_key             #here huggingface not use api its run locally on our machine
@@ -55,7 +54,7 @@ def ensure_index():
     desired_dimension = get_embedding_dimension()     # Function calling to get dimension of the embedding model
     
     pc = Pinecone(api_key=settings.pinecone_api_key)
-    names = [x["name"] for x in pc.list_indexes()]
+    names = [x.name for x in pc.list_indexes()]
 
     if settings.pinecone_index_name in names:
         index_info = pc.describe_index(settings.pinecone_index_name)
@@ -64,11 +63,13 @@ def ensure_index():
             current_dimension = index_info.get("dimension")
 
         if current_dimension is not None and current_dimension != desired_dimension:
-            pc.delete_index(name=settings.pinecone_index_name)
-            while settings.pinecone_index_name in [x["name"] for x in pc.list_indexes()]:
-                time.sleep(3)
+            raise RuntimeError(
+                f"Pinecone index '{settings.pinecone_index_name}' has dimension {current_dimension} "
+                f"but embeddings model '{settings.embeddings_model}' needs {desired_dimension}. "
+                "Use a different PINECONE_INDEX_NAME or delete the index manually."
+            )
 
-    if settings.pinecone_index_name not in [x['name'] for x in pc.list_indexes()]:
+    if settings.pinecone_index_name not in [x.name for x in pc.list_indexes()]:
         pc.create_index(
             name=settings.pinecone_index_name,
             dimension=desired_dimension,
@@ -106,8 +107,15 @@ def get_retriever():
 
 # Adding new Documents to vectorstore
 def add_documents(chunks):
+    # Deterministic ids: re-ingesting the same file overwrites its vectors instead of duplicating them.
+    ids = [
+        hashlib.sha1(
+            f"{c.metadata.get('source', '')}|{c.metadata.get('start_index', i)}|{c.page_content}".encode("utf-8")
+        ).hexdigest()
+        for i, c in enumerate(chunks)
+    ]
     store = get_vectorstore()
-    return store.add_documents(chunks)
+    return store.add_documents(chunks, ids=ids)
 
 
 

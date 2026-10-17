@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agentic RAG Copilot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=4" />
+</head>
+<body>
+  <div class="app">
+
+    <!-- ============ AGENT TRACES (left) ============ -->
+    <aside class="traces-col" id="tracesCol">
+      <h2 class="panel-title">Agent traces</h2>
+      <p class="panel-sub">Every step, start to end</p>
+      <div class="traces-list" id="tracesList">
+        <p class="traces-empty" id="tracesEmpty">Ask a question to see the agent's steps here.</p>
+      </div>
+    </aside>
+
+    <!-- ============ SIDEBAR (workflow, right) ============ -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>
+        </div>
+        <div>
+          <h1>RAG Copilot</h1>
+          <p>Enterprise IT Support Agent</p>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="newChatBtn">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        New chat
+      </button>
+
+      <button class="btn btn-upload" id="uploadBtn">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></svg>
+        Upload new document
+      </button>
+
+      <section class="panel">
+        <h2 class="panel-title">Agent workflow</h2>
+        <p class="panel-sub">Live path for the last question</p>
+        <ol class="pipeline" id="pipeline">
+          <li data-node="router"><span class="dot"></span><span>Route question</span></li>
+          <li data-node="retrieve"><span class="dot"></span><span>Retrieve from KB</span></li>
+          <li data-node="gradeKb"><span class="dot"></span><span>Grade KB evidence</span></li>
+          <li data-node="web"><span class="dot"></span><span>Web search (Tavily)</span></li>
+          <li data-node="gradeWeb"><span class="dot"></span><span>Grade web evidence</span></li>
+          <li data-node="rewrite"><span class="dot"></span><span>Rewrite query</span></li>
+          <li data-node="generate"><span class="dot"></span><span>Generate answer</span></li>
+        </ol>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">Session</h2>
+        <div class="stats">
+          <div class="stat"><b id="statQuestions">0</b><span>Questions</span></div>
+          <div class="stat"><b id="statKb">0</b><span>From KB</span></div>
+          <div class="stat"><b id="statWeb">0</b><span>From web</span></div>
+        </div>
+      </section>
+
+      <div class="sidebar-footer">
+        <button class="btn btn-ghost" id="settingsBtn">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+          Settings
+        </button>
+        <div class="status" id="status"><span class="status-dot"></span><span id="statusText">Checking…</span></div>
+      </div>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+
+    <!-- ============ MAIN ============ -->
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="Open menu">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <div class="topbar-title">
+          <h2>Agentic RAG Copilot</h2>
+          <span class="chip">Private KB → Web fallback</span>
+        </div>
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme">
+          <svg class="sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <svg class="moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+      </header>
+
+      <div class="chat" id="chat" aria-live="polite">
+        <!-- Welcome -->
+        <div class="welcome" id="welcome">
+          <div class="welcome-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>
+          </div>
+          <h2>How can I help with IT today?</h2>
+          <p>I search your private knowledge base first, grade the evidence, and fall back to the web only when needed.</p>
+          <div class="suggestions" id="suggestions">
+            <button class="suggestion" data-q="How do I reset my VPN password?">
+              <b>VPN password reset</b><span>Step-by-step from company policy</span>
+            </button>
+            <button class="suggestion" data-q="How do I set up MFA on my new phone?">
+              <b>Set up MFA</b><span>Authenticator and recovery steps</span>
+            </button>
+            <button class="suggestion" data-q="What is the laptop setup process for a new joiner?">
+              <b>Laptop onboarding</b><span>Devices, software, access</span>
+            </button>
+            <button class="suggestion" data-q="Outlook keeps asking for my password, how do I fix it?">
+              <b>Email troubleshooting</b><span>Common Outlook fixes</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <footer class="composer-wrap">
+        <form class="composer" id="composer" autocomplete="off">
+          <textarea id="input" rows="1" placeholder="Ask an IT support question…" maxlength="2000" aria-label="Your question"></textarea>
+          <button type="submit" class="send-btn" id="sendBtn" aria-label="Send" disabled>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </form>
+        <p class="hint">Enter to send · Shift+Enter for new line · Web answers may need IT validation</p>
+      </footer>
+    </main>
+  </div>
+
+  <!-- ============ SETTINGS MODAL ============ -->
+  <dialog id="settingsModal" class="modal">
+    <form method="dialog" class="modal-card" id="settingsForm">
+      <h3>Settings</h3>
+      <label>
+        <span>Backend URL</span>
+        <input type="url" id="apiBaseInput" placeholder="http://localhost:8000" />
+      </label>
+      <label>
+        <span>Chat endpoint</span>
+        <input type="text" id="chatPathInput" placeholder="/api/chat" />
+      </label>
+      <label>
+        <span>Health endpoint (optional)</span>
+        <input type="text" id="healthPathInput" placeholder="/api/health" />
+      </label>
+      <label class="check">
+        <input type="checkbox" id="showTraceInput" checked />
+        <span>Show agent trace under answers</span>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="settingsCancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="settingsSave" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ============ ADMIN UPLOAD MODAL ============ -->
+  <dialog id="uploadModal" class="modal">
+    <form class="modal-card" id="uploadForm">
+      <h3>Upload document</h3>
+      <div id="adminStep1">
+        <label>
+          <span>Admin password</span>
+          <input type="password" id="adminKeyInput" autocomplete="off" placeholder="Enter admin password" />
+        </label>
+      </div>
+      <div id="adminStep2" hidden>
+        <label>
+          <span>Document (.pdf, .txt, .md, .docx)</span>
+          <input type="file" id="docFileInput" accept=".pdf,.txt,.md,.docx" />
+        </label>
+      </div>
+      <p class="upload-msg" id="uploadMsg" role="status"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="uploadCancel">Close</button>
+        <button type="submit" class="btn btn-primary" id="uploadSubmit">Unlock</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/js/app.js?v=4"></script>
+</body>
+</html>

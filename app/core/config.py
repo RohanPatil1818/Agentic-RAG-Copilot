@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-20b"
     top_k: int = 4
     max_retries: int = 1
-    admin_api_key: str = "change-me"
+    admin_api_key: str = "Rohan@09"
     audit_db_path: str = str(BASE_DIR / "data" / "audit.db")
     upload_dir: str = str(BASE_DIR / "uploads")
     sample_kb_dir: str = str(BASE_DIR / "data" / "sample_kb")
