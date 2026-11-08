@@ -1,3 +1,4 @@
+
 /* =========================================================
    Agentic RAG Copilot — frontend
    Talks to your FastAPI backend (agent_graph.ask()).
@@ -26,6 +27,8 @@ function parseResponse(data) {
     source: d.source_used ?? d.source ?? "",
     citations: Array.isArray(d.citations) ? d.citations : [],
     trace: Array.isArray(d.trace) ? d.trace : [],
+    cache: d.cache ?? null,
+    latencyMs: d.latency_ms ?? null,
   };
 }
 
@@ -43,7 +46,7 @@ const store = {
 
 const settings = { ...DEFAULTS, ...store.get("rag.settings", {}) };
 if (settings.healthPath === "/health") settings.healthPath = DEFAULTS.healthPath;   // old saved default
-const stats = { questions: 0, kb: 0, web: 0 };
+const stats = { questions: 0, kb: 0, web: 0, cache: 0 };
 let busy = false;
 
 const el = {
@@ -111,25 +114,42 @@ const SOURCES = {
 };
 const sourceInfo = s => SOURCES[s] ?? { label: s || "Answer", cls: "direct" };
 
+/* ---------- 3b. Cache helpers ---------- */
+const isHit = c => c?.status === "hit";
+const fmtMs = ms => ms == null ? "" : ms >= 1000 ? (ms / 1000).toFixed(1) + " s" : Math.round(ms) + " ms";
+function fmtAge(sec) {
+  if (sec == null) return "";
+  if (sec < 60) return sec + " s";
+  if (sec < 3600) return Math.round(sec / 60) + " min";
+  if (sec < 86400) return (sec / 3600).toFixed(1) + " h";
+  return Math.round(sec / 86400) + " d";
+}
+// Where the cached answer originally came from, in plain words.
+function cacheOrigin(source) {
+  const cls = sourceInfo(source).cls;
+  return cls === "web" ? "web search" : cls === "kb" ? "company KB" : sourceInfo(source).label.toLowerCase();
+}
+
 /* ---------- 4. Pipeline visualiser ---------- */
-const NODE_ORDER = ["router", "retrieve", "gradeKb", "web", "gradeWeb", "rewrite", "generate"];
+const NODE_ORDER = ["cache", "router", "retrieve", "gradeKb", "web", "gradeWeb", "rewrite", "generate"];
 let simTimer = null;
 
 function setNode(name, state) {
   const li = $(`[data-node="${name}"]`, el.pipeline);
   if (!li) return;
-  li.classList.remove("running", "done", "skipped", "fail");
+  li.classList.remove("running", "done", "skipped", "fail", "hit", "miss", "cached");
   if (state) li.classList.add(state);
 }
 function resetPipeline() {
   clearInterval(simTimer);
   NODE_ORDER.forEach(n => setNode(n, null));
+  const note = $("#cacheNote"); if (note) note.textContent = "";
 }
 
 // While waiting (no streaming), softly animate the first steps.
 function simulatePipeline() {
   resetPipeline();
-  const steps = ["router", "retrieve", "gradeKb"];
+  const steps = ["cache", "router", "retrieve", "gradeKb"];
   let i = 0;
   setNode(steps[0], "running");
   simTimer = setInterval(() => {
@@ -141,12 +161,14 @@ function simulatePipeline() {
 }
 
 // Final state derived from the real trace the backend returned.
-function applyTrace(trace, source) {
+function applyTrace(trace, source, cache) {
   resetPipeline();
+  const hit = isHit(cache);
   const seen = new Set();
   let failed = false;
   for (const t of trace) {
-    const s = String(t);
+    const s = String(t).replace(/^↺\s*/, "");   // cached replays carry a leading arrow
+    if (/^cache/i.test(s)) continue;
     if (/^router/i.test(s)) seen.add("router");
     else if (/private kb retrieval/i.test(s)) seen.add("retrieve");
     else if (/kb evidence grade/i.test(s)) { seen.add("gradeKb"); }
@@ -156,20 +178,39 @@ function applyTrace(trace, source) {
     else if (/answer generation|direct response/i.test(s)) seen.add("generate");
     else if (/stopped/i.test(s)) failed = true;
   }
-  NODE_ORDER.forEach(n => setNode(n, seen.has(n) ? "done" : "skipped"));
-  if (failed) setNode("gradeWeb", "fail");
+  const note = $("#cacheNote");
+  if (hit) {
+    setNode("cache", "hit");
+    if (note) note.textContent = `HIT · ${cache.layer}`;
+    NODE_ORDER.slice(1).forEach(n => setNode(n, seen.has(n) ? "cached" : "skipped"));   // steps that originally ran
+  } else {
+    setNode("cache", cache ? "miss" : "skipped");
+    if (note) note.textContent = cache ? "MISS" : "";
+    NODE_ORDER.slice(1).forEach(n => setNode(n, seen.has(n) ? "done" : "skipped"));
+    if (failed) setNode("gradeWeb", "fail");
+  }
   if (source === "direct") ["retrieve", "gradeKb", "web", "gradeWeb", "rewrite"].forEach(n => setNode(n, "skipped"));
 }
 
 /* ---------- 4b. Agent traces column ---------- */
-function addTraceGroup(question, trace) {
+function addTraceGroup(question, trace, cache, source, latencyMs) {
   const list = $("#tracesList");
   $("#tracesEmpty")?.remove();
   const g = document.createElement("div");
   g.className = "trace-group";
+  const hit = isHit(cache);
+  const chip = !cache ? "" : hit
+    ? `<div class="trace-cache hit">⚡ Cache hit · ${escapeHtml(cache.layer)} match · originally from ${cacheOrigin(source)} · ${fmtMs(latencyMs)}</div>`
+    : '<div class="trace-cache miss">Cache miss · full agent run</div>';
+  const steps = (trace.length ? trace : ["No trace returned"]).map((t, i) => {
+    const s = String(t);
+    const replay = s.startsWith("↺");
+    const cls = /^cache/i.test(s) ? "cache-step" : replay ? "replayed" : "";
+    const text = escapeHtml(replay ? s.replace(/^↺\s*/, "") : s);
+    return `<li class="${cls}"><span class="n">${i + 1}</span><span class="t">${text}${replay ? " <em>(from cache)</em>" : ""}</span></li>`;
+  }).join("");
   g.innerHTML = `<div class="trace-q" title="${escapeHtml(question)}">${escapeHtml(question)}</div>
-    <ol class="trace-steps">${(trace.length ? trace : ["No trace returned"]).map((t, i) =>
-      `<li><span class="n">${i + 1}</span><span class="t">${escapeHtml(t)}</span></li>`).join("")}</ol>`;
+    ${chip}<ol class="trace-steps">${steps}</ol>`;
   list.appendChild(g);
   list.scrollTop = list.scrollHeight;
 }
@@ -201,35 +242,39 @@ function addTyping() {
   return msg;
 }
 
-function citationHtml(c) {
+function citationHtml(c, cached = false) {
   const title = escapeHtml(c.title || c.url || "Source");
   const kind = c.type === "web" ? "Web" : "KB";
   const icon = c.type === "web"
     ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg>'
     : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
   const safeUrl = /^https?:\/\//i.test(c.url || "") ? escapeHtml(c.url) : "";
-  const inner = `${icon}<span>${title}</span><small>${kind}</small>`;
+  const inner = `${icon}<span>${title}</span><small>${kind}${cached ? " · cached" : ""}</small>`;
   return safeUrl
     ? `<a class="cite" href="${safeUrl}" target="_blank" rel="noopener noreferrer" title="${title}">${inner}</a>`
     : `<div class="cite" title="${title}">${inner}</div>`;
 }
 
-function fillBotMessage(msg, { answer, source, citations, trace }) {
+function fillBotMessage(msg, { answer, source, citations, trace, cache, latencyMs }) {
   const info = sourceInfo(source);
+  const hit = isHit(cache);
+  const origin = cacheOrigin(source);
   const body = $(".msg-body", msg);
   const isWeb = info.cls === "web";
 
   body.innerHTML = `
     <div class="bubble"><div class="md">${renderMarkdown(answer || "_No answer returned._")}</div></div>
-    ${isWeb ? '<div class="warn-note">External web information — validate with IT before changing company-managed systems.</div>' : ""}
+    ${hit ? `<div class="cache-note">⚡ Served from cache (${escapeHtml(cache.layer)} match) · originally answered from ${origin} · stored ${fmtAge(cache.age_seconds)} ago · ${fmtMs(latencyMs)}${cache.saved_latency_ms ? ` instead of ~${fmtMs(cache.saved_latency_ms)}` : ""}</div>` : ""}
+    ${isWeb ? `<div class="warn-note">External web information — validate with IT before changing company-managed systems.${hit ? ` This is a cached answer (stored ${fmtAge(cache.age_seconds)} ago).` : ""}</div>` : ""}
     <div class="meta">
       <span class="badge ${info.cls}">${info.label}</span>
+      ${hit ? `<span class="badge cache">⚡ Cached · ${escapeHtml(cache.layer)}</span>` : ""}
       <button class="mini-btn" data-copy>Copy</button>
     </div>
-    ${citations.length ? `<div class="citations">${citations.map(citationHtml).join("")}</div>` : ""}
+    ${citations.length ? `${hit ? `<div class="cite-label">Resources used · from cache (${origin})</div>` : ""}<div class="citations">${citations.map(c => citationHtml(c, hit)).join("")}</div>` : ""}
     ${settings.showTrace && trace.length ? `
       <details class="trace">
-        <summary>Agent trace · ${trace.length} steps</summary>
+        <summary>Agent trace · ${trace.length} steps${hit ? " · cache hit" : ""}</summary>
         <ol>${trace.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ol>
       </details>` : ""}
   `;
@@ -310,12 +355,13 @@ async function ask(question, { skipUserBubble = false } = {}) {
 
   try {
     const result = await callBackend(question);
-    applyTrace(result.trace, result.source);
-    addTraceGroup(question, result.trace);
+    applyTrace(result.trace, result.source, result.cache);
+    addTraceGroup(question, result.trace, result.cache, result.source, result.latencyMs);
     fillBotMessage(typing, result);
     stats.questions++;
     if (result.source === "private_kb") stats.kb++;
     if (result.source === "web_search" || result.source === "web") stats.web++;
+    if (isHit(result.cache)) stats.cache++;
     renderStats();
   } catch (err) {
     resetPipeline();
@@ -332,6 +378,7 @@ function renderStats() {
   $("#statQuestions").textContent = stats.questions;
   $("#statKb").textContent = stats.kb;
   $("#statWeb").textContent = stats.web;
+  $("#statCache").textContent = stats.cache;
 }
 
 /* ---------- 8. UI wiring ---------- */
@@ -465,3 +512,4 @@ autoGrow();
 checkHealth();
 setInterval(checkHealth, 30000);
 el.input.focus();
+ 

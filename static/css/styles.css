@@ -1,3 +1,4 @@
+
 /* ============ Tokens ============ */
 :root {
   --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -10,6 +11,7 @@
   --kb: #10b981;
   --web: #f59e0b;
   --direct: #38bdf8;
+  --cache: #a855f7;
   --warn: #ef4444;
   --shadow: 0 8px 30px rgba(0, 0, 0, .18);
 }
@@ -123,10 +125,17 @@ button { cursor: pointer; border: 0; background: none; }
 .pipeline li.done { color: var(--text); }
 .pipeline li.done .dot { background: var(--kb); border-color: var(--kb); }
 .pipeline li.skipped { opacity: .45; }
+.pipeline li.hit { color: var(--text); background: color-mix(in srgb, var(--cache) 10%, transparent); }
+.pipeline li.hit .dot { background: var(--cache); border-color: var(--cache); }
+.pipeline li.miss .dot { background: var(--muted); border-color: var(--muted); }
+.pipeline li.cached { color: var(--muted); }
+.pipeline li.cached .dot { background: color-mix(in srgb, var(--cache) 25%, transparent); border-color: var(--cache); }
+.node-note { margin-left: auto; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; color: var(--cache); }
+.pipeline li.miss .node-note { color: var(--muted); }
 .pipeline li.fail .dot { background: var(--warn); border-color: var(--warn); }
 @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
 
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px; }
 .stat { background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 6px; text-align: center; }
 .stat b { display: block; font-size: 20px; line-height: 1.1; }
 .stat span { font-size: 11px; color: var(--muted); }
@@ -233,6 +242,7 @@ button { cursor: pointer; border: 0; background: none; }
 .badge.kb { color: var(--kb); background: color-mix(in srgb, var(--kb) 12%, transparent); }
 .badge.web { color: var(--web); background: color-mix(in srgb, var(--web) 12%, transparent); }
 .badge.direct { color: var(--direct); background: color-mix(in srgb, var(--direct) 12%, transparent); }
+.badge.cache { color: var(--cache); background: color-mix(in srgb, var(--cache) 12%, transparent); }
 .badge.none { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .mini-btn {
   font-size: 12px; color: var(--muted); padding: 3px 10px; border-radius: 8px; border: 1px solid var(--border);
@@ -245,7 +255,14 @@ button { cursor: pointer; border: 0; background: none; }
   padding: 8px 12px; border-radius: var(--radius-sm);
 }
 
+.cache-note {
+  font-size: 12.5px; color: var(--cache); background: color-mix(in srgb, var(--cache) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cache) 30%, transparent);
+  padding: 8px 12px; border-radius: var(--radius-sm);
+}
+
 /* Citations */
+.cite-label { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; color: var(--cache); }
 .citations { display: flex; flex-wrap: wrap; gap: 8px; }
 .cite {
   display: inline-flex; align-items: center; gap: 8px; max-width: 100%;
@@ -378,6 +395,14 @@ button { cursor: pointer; border: 0; background: none; }
 }
 .trace-steps li:last-child .n { color: #fff; background: var(--accent); }
 .trace-steps .t { padding-top: 1px; }
+.trace-steps li.cache-step .t { color: var(--cache); font-weight: 600; }
+.trace-steps li.replayed .t { color: var(--muted); }
+.trace-steps li.replayed .t em { font-style: normal; font-size: 10.5px; color: var(--cache); }
+.trace-steps li.replayed .n { color: var(--cache); border-color: var(--cache); }
+.trace-steps li.replayed:last-child .n { color: #fff; background: var(--cache); }
+.trace-cache { font-size: 11.5px; font-weight: 600; padding: 5px 8px; border-radius: 8px; margin: -2px 0 10px; line-height: 1.35; }
+.trace-cache.hit { color: var(--cache); background: color-mix(in srgb, var(--cache) 12%, transparent); }
+.trace-cache.miss { color: var(--muted); background: var(--surface-2); }
 .upload-msg { font-size: 12.5px; min-height: 1.2em; color: var(--muted); }
 .upload-msg.err { color: var(--warn); }
 .upload-msg.ok { color: var(--kb); }
@@ -385,3 +410,5 @@ button { cursor: pointer; border: 0; background: none; }
 
 .btn-upload { color: var(--text); border: 1px dashed var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .btn-upload:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+ 
+

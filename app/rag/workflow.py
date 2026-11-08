@@ -1,3 +1,4 @@
+
 import logging
 import re
 from typing import Literal
@@ -24,6 +25,8 @@ def llm():
             model = settings.groq_model,
             temperature = 0,
             api_key = settings.groq_api_key,
+            timeout = 30,          # seconds: never hang a request on a slow upstream
+            max_retries = 2,
         )
     return _llm
 
@@ -44,11 +47,12 @@ def web_search_tool():
     return _web_search
 
 
-# It will trace your Executions
+# It will trace your Executions add it in list 
 def add_trace(state: AgentState, message: str):
     return [*state.get("trace", []), message]
 
-
+# AgentState -> here we define Agent State
+# RouteDecision -> It will tell we can get a "Direct answer" or use "Knowledge Base"
 def route_question(state: AgentState):
     router = llm().with_structured_output(RouteDecision, method="json_mode")
     try:
@@ -68,27 +72,35 @@ Return JSON with route set to exactly "kb" or "direct", e.g. {{"route":"kb"}}.
     return {"source_used": route, "trace": add_trace(state, f"Router -> {route.upper()}")}
 
 
-
+# It define if "direct answer" then go to direct answer node
+# And if it give "retrive_kb" then go to retrive_kb node
 def route_after_router(state: AgentState) -> Literal["retrieve_kb", "direct_answer"]:
     return "retrieve_kb" if state["source_used"] == "kb" else "direct_answer"
 
 
+# Here we Retrive data from existing knowledgeBase
 def retrieve_kb(state: AgentState):
     docs = get_retriever().invoke(state["current_query"])
     return {"kb_docs": docs, "trace": add_trace(state, f"Private KB retrieval → {len(docs)} chunks")}
+
 
 # It tells the retrive context is good or weak
 def grade_kb(state: AgentState):
     grader = llm().with_structured_output(EvidenceGrade, method="json_mode")
     context = "\n\n".join(f"Source: {d.metadata.get('source','unknown')}\n{d.page_content}" for d in state["kb_docs"])
-    grade = grader.invoke(f"""
+    try:
+      grade = grader.invoke(f"""
 You grade evidence for an enterprise IT support assistant.
 Question: {state['question']}
 Private company KB evidence:\n{context}
 Return good only if the evidence is sufficient to answer confidently and specifically.
 Otherwise return weak. JSON: {{"grade":"good"}} or {{"grade":"weak"}}.
 """)
-    return {"kb_grade": grade.grade, "trace": add_trace(state, f"KB evidence grade → {grade.grade.upper()}")}
+      kb_grade = grade.grade
+    except Exception:
+      logger.warning("KB grader failed; treating evidence as weak", exc_info=True)
+      kb_grade = "weak"        # safe default: fall back to web search instead of crashing
+    return {"kb_grade": kb_grade, "trace": add_trace(state, f"KB evidence grade → {kb_grade.upper()}")}
 
 
 # It tell if content is GOOD then retrive from KB otherwise do websearch
@@ -96,6 +108,7 @@ def after_kb(state: AgentState) -> Literal["generate_from_kb", "search_web"]:
     return "generate_from_kb" if state["kb_grade"] == "good" else "search_web"
 
 
+# Node to perform Web_Search
 def search_web(state: AgentState):
     try:
         result = web_search_tool().invoke({"query": state["current_query"]})
@@ -124,19 +137,26 @@ def search_web(state: AgentState):
         "trace": add_trace(state, "Web fallback → Tavily search"),
     }
 
+
 # Gradding the content of web search as good or bad
 def grade_web(state: AgentState):
     grader = llm().with_structured_output(EvidenceGrade, method="json_mode")
-    grade = grader.invoke(f"""
+    try:
+      grade = grader.invoke(f"""
 Question: {state['question']}
 Web evidence:\n{state['web_results']}
 Return good if the evidence is sufficient and directly relevant; otherwise weak.
 Return valid JSON like {{"grade":"good"}}.
 """)
-    return {"web_grade": grade.grade, "trace": add_trace(state, f"Web evidence grade → {grade.grade.upper()}")}
+      web_grade = grade.grade
+    except Exception:
+      logger.warning("Web grader failed; treating evidence as weak", exc_info=True)
+      web_grade = "weak"
+    return {"web_grade": web_grade, "trace": add_trace(state, f"Web evidence grade → {web_grade.upper()}")}
 
 
-
+# After web search if content is weak then we rewrite the Query
+# If max_retries happens and still not get answer then we return Insufficient content to generate answer
 def after_web(state: AgentState) -> Literal["generate_from_web", "rewrite_query", "insufficient"]:
     if state["web_grade"] == "good":
         return "generate_from_web"
@@ -145,6 +165,7 @@ def after_web(state: AgentState) -> Literal["generate_from_web", "rewrite_query"
     return "insufficient"
 
 
+# Node to Rewrite the querry
 def rewrite_query(state: AgentState):
     rewritten = llm().invoke(f"""
 Rewrite this IT support question for better private knowledge retrieval and vendor web search.
@@ -154,12 +175,13 @@ Question: {state['question']}
     return {
         "current_query": rewritten,
         "retry_count": state["retry_count"] + 1,
-        "trace": add_trace(state, f"Query rewrite → {rewritten}"),
+        "trace": add_trace(state, f"Query rewrite → {rewritten}"),     # Add to Trace node 
     }
 
 
+# Here we generate the answer from the current Knowledge Base
 def generate_from_kb(state: AgentState):
-    context = "\n\n".join(f"[Source: {d.metadata.get('source','unknown')}]\n{d.page_content}" for d in state["kb_docs"])
+    context = "\n\n".join(f"[Source: {d.metadata.get('source','unknown')}]\n{d.page_content}" for d in state["kb_docs"])  # fetch the data
     answer = llm().invoke(f"""
 You are an enterprise IT support copilot. Answer ONLY from the private company KB below.
 Be concise, actionable, and safe. If steps are present, present them clearly.
@@ -191,6 +213,7 @@ def direct_answer(state: AgentState):
     return {"answer": answer, "source_used": "direct", "trace": add_trace(state, "Direct response → no retrieval")}
 
 
+# If max_iteration happens still not get answer then is return Insufficient content to answer
 def insufficient(state: AgentState):
     return {
         "answer": "I couldn't find enough reliable evidence in the company knowledge base or external search to answer confidently. Please contact the IT help desk or provide more details.",
@@ -206,36 +229,49 @@ def insufficient(state: AgentState):
 def build_graph():
     graph = StateGraph(AgentState)
     for name, fn in {
-        "route_question": route_question,
-        "retrieve_kb": retrieve_kb,
-        "grade_kb": grade_kb,
-        "search_web": search_web,
-        "grade_web": grade_web,
-        "rewrite_query": rewrite_query,
-        "generate_from_kb": generate_from_kb,
-        "generate_from_web": generate_from_web,
-        "direct_answer": direct_answer,
-        "insufficient": insufficient,
+        "route_question": route_question,          # It tells answer should be Direct LLM call or from existing Knowledge Base
+        "retrieve_kb": retrieve_kb,                # Here we retrive chunks
+        "grade_kb": grade_kb,                      # We grade knowledge Base as "WEAK" or "GOOD"
+        "search_web": search_web,                  # If Knowledge Base is "WEAK" then we do websearch
+        "grade_web": grade_web,                     # Here we grade the websearch as "GOOD" or "WEAK"
+        "rewrite_query": rewrite_query,             # Still we get "WEAK" from websearch then we REWRITE the query
+        "generate_from_kb": generate_from_kb,       # We generate th answer from current Knowledge Base
+        "generate_from_web": generate_from_web,     # Here we generate the answer from web search
+        "direct_answer": direct_answer,              # perform direct llm call
+        "insufficient": insufficient,               # If we still get not answer after "Rewriting the Query" with max_iteration then we pass insufficient data to answer
     }.items():
         graph.add_node(name, fn)
 
-    graph.add_edge(START, "route_question")
-    graph.add_conditional_edges("route_question", route_after_router, {
+    graph.add_edge(START, "route_question")                        # Direct LLM call or knowledge base
+
+    graph.add_conditional_edges("route_question", route_after_router, {        # If direct then give direct answer or from Knowledge Base current
         "retrieve_kb": "retrieve_kb", "direct_answer": "direct_answer"
     })
-    graph.add_edge("retrieve_kb", "grade_kb")
-    graph.add_conditional_edges("grade_kb", after_kb, {
+
+    graph.add_edge("retrieve_kb", "grade_kb")                           # Here we perform grading of Knowledge Base
+
+    graph.add_conditional_edges("grade_kb", after_kb, {                    # in this we generate from KB of it is WEAK then we perform webSearch
         "generate_from_kb": "generate_from_kb", "search_web": "search_web"
     })
-    graph.add_edge("search_web", "grade_web")
+
+    graph.add_edge("search_web", "grade_web")                            # Grade answer of websearch as WEAK or GOOD
+
+     # Here we grade web Answer if it is Weak then we "REWRITE the Query" and maxx doing still still we get WEAK then pass message
+     #  insufficient content to answer
     graph.add_conditional_edges("grade_web", after_web, {
         "generate_from_web": "generate_from_web", "rewrite_query": "rewrite_query", "insufficient": "insufficient"
     })
-    graph.add_edge("rewrite_query", "retrieve_kb")
+
+    graph.add_edge("rewrite_query", "retrieve_kb")      # Retrite the query
+
     graph.add_edge("generate_from_kb", END)
+
     graph.add_edge("generate_from_web", END)
+
     graph.add_edge("direct_answer", END)
+
     graph.add_edge("insufficient", END)
+    
     return graph.compile()
 
 agent_graph = build_graph()

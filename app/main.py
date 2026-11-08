@@ -7,6 +7,7 @@ from app.api.routes import router
 from app.core.config import get_settings, BASE_DIR
 from app.core.logging import configure_logging
 from app.services.audit import init_db
+from prometheus_client import make_asgi_app
 
 
 configure_logging()
@@ -14,6 +15,9 @@ settings = get_settings()
 init_db()
 
 app = FastAPI(title=settings.app_name, version="1.0.0")
+
+
+app.mount("/metrics", make_asgi_app())
 
 app.include_router(router)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")

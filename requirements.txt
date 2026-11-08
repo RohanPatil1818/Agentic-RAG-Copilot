@@ -18,3 +18,12 @@ python-multipart
 pydantic-settings
 pypdf
 python-docx
+redis
+redisvl
+prometheus-client
+numpy
+pytest
+fakeredis
+httpx
+requests
+ 

@@ -1,0 +1,123 @@
+
+[
+  {
+    "a": "How do I reset my VPN password?",
+    "b": "I forgot my VPN password, what should I do?",
+    "same": true
+  },
+  {
+    "a": "How do I set up MFA on my phone?",
+    "b": "Steps to enable multi-factor authentication on my mobile",
+    "same": true
+  },
+  {
+    "a": "What is the laptop setup process for a new joiner?",
+    "b": "How is a new employee's laptop configured?",
+    "same": true
+  },
+  {
+    "a": "How can I request access to new software?",
+    "b": "What is the process to get software access approved?",
+    "same": true
+  },
+  {
+    "a": "My email is not syncing on my phone",
+    "b": "Outlook mail won't sync on my mobile",
+    "same": true
+  },
+  {
+    "a": "How do I connect to the office WiFi?",
+    "b": "Steps to join the company wireless network",
+    "same": true
+  },
+  {
+    "a": "How do I reset my password?",
+    "b": "I forgot my password, how can I change it?",
+    "same": true
+  },
+  {
+    "a": "VPN keeps disconnecting",
+    "b": "my VPN connection drops frequently",
+    "same": true
+  },
+  {
+    "a": "How to report a lost laptop?",
+    "b": "What should I do if my laptop is stolen or lost?",
+    "same": true
+  },
+  {
+    "a": "How do I install the company antivirus?",
+    "b": "Where do I get the corporate antivirus installed?",
+    "same": true
+  },
+  {
+    "a": "How do I get a domain email account?",
+    "b": "What is the process to get a company email address?",
+    "same": true
+  },
+  {
+    "a": "How do I raise a ticket with the IT help desk?",
+    "b": "How can I contact IT support to log an issue?",
+    "same": true
+  },
+  {
+    "a": "How do I reset my VPN password?",
+    "b": "How do I reset my email password?",
+    "same": false
+  },
+  {
+    "a": "How do I set up MFA on my phone?",
+    "b": "How do I remove MFA from my account?",
+    "same": false
+  },
+  {
+    "a": "What is the laptop setup process for a new joiner?",
+    "b": "How do I request a laptop replacement?",
+    "same": false
+  },
+  {
+    "a": "How can I request access to new software?",
+    "b": "How can I uninstall software I no longer need?",
+    "same": false
+  },
+  {
+    "a": "My email is not syncing on my phone",
+    "b": "My email is not syncing on my laptop",
+    "same": false
+  },
+  {
+    "a": "How do I connect to the office WiFi?",
+    "b": "How do I connect to the VPN from home?",
+    "same": false
+  },
+  {
+    "a": "How do I reset my password?",
+    "b": "What is the password policy and expiry period?",
+    "same": false
+  },
+  {
+    "a": "VPN keeps disconnecting",
+    "b": "VPN will not install on my Mac",
+    "same": false
+  },
+  {
+    "a": "How to report a lost laptop?",
+    "b": "How to report a phishing email?",
+    "same": false
+  },
+  {
+    "a": "How do I install the company antivirus?",
+    "b": "How do I update the company antivirus?",
+    "same": false
+  },
+  {
+    "a": "How do I get a domain email account?",
+    "b": "How do I set up an email signature?",
+    "same": false
+  },
+  {
+    "a": "How do I raise a ticket with the IT help desk?",
+    "b": "What are the IT help desk working hours?",
+    "same": false
+  }
+]

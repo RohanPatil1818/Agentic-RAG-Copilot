@@ -9,7 +9,7 @@ class RouteDecision(BaseModel):
         description="Use kb for questions needing Agentic RAG docs; direct for greetings/simple chat."
     )
 
-class EvidenceGrade(BaseModel):
+class EvidenceGrade(BaseModel):            # By using an pydantic BaseModel we get an Structured Output
     grade: Literal["good", "weak"] = Field(
         description="Good Means evidence can answer the questions; weak means not enough evidence."
     )
